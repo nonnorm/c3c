@@ -1234,6 +1234,7 @@ static inline void llvm_emit_bitassign_expr(GenContext *c, BEValue *be_value, Ex
 	if (bswap) current_value = llvm_emit_bswap(c, current_value);
 	llvm_store_raw(c, &parent, current_value);
 }
+
 static inline void llvm_emit_bitaccess(GenContext *c, BEValue *be_value, Expr *expr)
 {
 	Expr *parent = expr->access_resolved_expr.parent;
@@ -2015,6 +2016,7 @@ LLVMValueRef llvm_emit_const_bitstruct_array(GenContext *c, ConstInitializer *in
 	return llvm_get_array(c->byte_type, slots, elements);
 }
 
+// NOTE: currently unimplemented for bitstructs built on char arrays
 LLVMValueRef llvm_emit_const_bitstruct(GenContext *c, ConstInitializer *initializer)
 {
 	Decl *decl = initializer->type->decl;
@@ -2031,36 +2033,57 @@ LLVMValueRef llvm_emit_const_bitstruct(GenContext *c, ConstInitializer *initiali
 	TypeSize base_type_size = type_size(base_type);
 	TypeSize base_type_bitsize = base_type_size * 8;
 	ASSERT(vec_size(members) == vec_size(initializer->init_struct));
-	FOREACH_IDX(i, ConstInitializer *, val, initializer->init_struct)
+	FOREACH_IDX(i, ConstInitializer *, outer_val, initializer->init_struct)
 	{
 		Decl *member = members[i];
+		Type *member_type = member->type;
 		unsigned start_bit = member->var.start_bit;
 		unsigned end_bit = member->var.end_bit;
 		unsigned bit_size = end_bit - start_bit + 1;
 		ASSERT(bit_size > 0 && bit_size <= 128);
-		LLVMValueRef value;
-		if (val->kind == CONST_INIT_ZERO)
-		{
-			value = val->type == type_bool ? llvm_get_zero_raw(c->byte_type) : llvm_get_zero(c, val->type);
+
+		bool arraylike = type_is_arraylike(member_type);
+		unsigned elem_count = arraylike ? member_type->array.len : 1;
+		// NOTE: ASSERT macro fails because of % inside format string
+		// ASSERT(bit_size % elem_count == 0);
+    	unsigned elem_bits = bit_size / elem_count;
+
+		ConstInitializer** inner_vals = &outer_val;
+
+		if (arraylike) {
+			// NOTE: unsure if it's even possible for other things to be supported here, assert for safety
+			ASSERT(outer_val->kind == CONST_INIT_ARRAY_FULL);
+			inner_vals = outer_val->init_array_full;
 		}
-		else
-		{
-			BEValue entry;
-			ASSERT(val->kind == CONST_INIT_VALUE);
-			llvm_emit_const_expr(c, &entry, val->init_value);
-			value = llvm_load_value_store(c, &entry);
+
+		for (unsigned j = 0; j < elem_count; ++j) {
+			ConstInitializer* val = inner_vals[j];
+			unsigned elem_start = start_bit + j * elem_bits;
+
+			LLVMValueRef value;
+			if (val->kind == CONST_INIT_ZERO)
+			{
+				value = val->type == type_bool ? llvm_get_zero_raw(c->byte_type) : llvm_get_zero(c, val->type);
+			}
+			else
+			{
+				BEValue entry;
+				ASSERT(val->kind == CONST_INIT_VALUE);
+				llvm_emit_const_expr(c, &entry, val->init_value);
+				value = llvm_load_value_store(c, &entry);
+			}
+			value = llvm_zext_trunc(c, value, llvm_base_type);
+			if (bit_size < base_type_bitsize)
+			{
+				LLVMValueRef mask = llvm_emit_lshr_fixed(c, llvm_get_ones_raw(llvm_base_type), base_type_bitsize - bit_size);
+				value = llvm_emit_and_raw(c, mask, value);
+			}
+			if (elem_start > 0)
+			{
+				value = llvm_emit_shl_fixed(c, value, elem_start);
+			}
+			result = llvm_emit_or_raw(c, value, result);
 		}
-		value = llvm_zext_trunc(c, value, llvm_base_type);
-		if (bit_size < base_type_bitsize)
-		{
-			LLVMValueRef mask = llvm_emit_lshr_fixed(c, llvm_get_ones_raw(llvm_base_type), base_type_bitsize - bit_size);
-			value = llvm_emit_and_raw(c, mask, value);
-		}
-		if (start_bit > 0)
-		{
-			value = llvm_emit_shl_fixed(c, value, start_bit);
-		}
-		result = llvm_emit_or_raw(c, value, result);
 	}
 	if (bitstruct_requires_byteswap(decl))
 	{

@@ -597,6 +597,7 @@ static inline TypeInfo *parse_vector_type_index(ParseContext *c, TypeInfo *type)
 	RANGE_EXTEND_PREV(vector);
 	return vector;
 }
+
 /**
  * type ::= base_type ('*' | array_type_index | vector_type_index | generic_parameters)*
  *
@@ -2136,7 +2137,7 @@ static inline bool parse_bitstruct_body(ParseContext *c, Decl *decl)
 		ContractDescription contracts = EMPTY_CONTRACT;
 		if (!parse_element_contract(c, &contracts, "bitstruct members")) return decl_poison(decl);
 		ASSIGN_TYPE_OR_RET(TypeInfo *type, parse_base_type(c), false);
-		ASSIGN_TYPE_OR_RET(type, parse_array_type_index(c), false);
+		ASSIGN_TYPE_OR_RET(type, parse_type_with_base_maybe_generic(c, type, false), false);
 		Decl *member_decl = decl_new_var_current(c, type, VARDECL_BITMEMBER);
 		attach_deprecation_from_contract(c, &contracts, member_decl);
 		if (!try_consume(c, TOKEN_IDENT))

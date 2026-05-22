@@ -795,13 +795,20 @@ static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *par
 	if (!sema_resolve_type_info(context, type_info, RESOLVE_TYPE_DEFAULT)) return false;
 	member->type = type_info->type;
 
+	// NOTE: need to add a fix for typedefs that are arrays that are enums? (ew)
+	// NOTE: double flattening required for above?
 	// Flatten the distinct and enum types.
-	Type *member_type = type_flatten_for_bitstruct(member->type);
+	Type *flat_type = type_flatten_for_bitstruct(member->type);
+	// Get inner type if it's arraylike, will be NULL otherwise
+	Type *indexed_type = type_get_indexed_type(flat_type);
+	// Disallows slices, which will have a type index of 0
+	bool arraylike = type_is_arraylike(flat_type);
+	// Actual type that will be checked (indexed_type only if it exists)
+	Type *member_type = arraylike ? indexed_type : flat_type;
 
-	// Only accept (flattened) integer and bool types
 	if (!type_is_integer(member_type) && member_type != type_bool)
 	{
-		SEMA_ERROR(type_info, "%s is not supported in a bitstruct, only enums, integer and boolean values may be used.",
+		SEMA_ERROR(type_info, "%s is not supported in a bitstruct, only enums, integer and boolean arrays or values may be used.",
 				   type_quoted_error_string(member->type));
 		return false;
 	}
@@ -822,7 +829,7 @@ static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *par
 
 	if (is_consecutive)
 	{
-		ASSERT(!member->var.bit_is_expr && "Should always me inferred");
+		ASSERT(!member->var.bit_is_expr && "Should always be inferred");
 		if (member_type != type_bool)
 		{
 			SEMA_ERROR(type_info, "For bitstructs without bit ranges, the types must all be 'bool'.");
@@ -836,6 +843,10 @@ static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *par
 		}
 		goto AFTER_BIT_CHECK;
 	}
+
+	// NOTE: what does bit_is_expr do? It seems to always be assigned.
+	// Except when bits are not stated at all?
+	// So any bits that are expressely stated are evaluated as a constant int expression?
 
 	if (member->var.bit_is_expr)
 	{
@@ -880,9 +891,12 @@ static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *par
 		{
 			// No end bit, this is only ok if the type is bool, otherwise a range is needed.
 			// This prevents confusion with C style bits.
-			if (member_type->type_kind != TYPE_BOOL)
+
+			// NOTE: Why not member_type != type_bool as above?
+			// Do not allow boolean arrays to be inferred, for simplicity.
+			if (member_type->type_kind != TYPE_BOOL && !arraylike)
 			{
-				SEMA_ERROR(member, "Only booleans may use non-range indices, try using %d..%d instead.", start_bit, start_bit);
+				SEMA_ERROR(member, "Only 1-bit boolean values may use non-range indices, try using %d..%d instead.", start_bit, start_bit);
 				return false;
 			}
 		}
@@ -905,6 +919,26 @@ static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *par
 	// And how many we have.
 	TypeSize bits_available = end_bit + 1 - start_bit;
 
+	if (arraylike)
+	{
+		if (flat_type->array.len > bits_available)
+		{
+			SEMA_ERROR(member, "Array length %d must be less than or equal to %d available bits", flat_type->array.len, bits_available);
+			return false;
+		}
+		if (indexed_type == type_bool && bits_available != flat_type->array.len)
+		{
+			SEMA_ERROR(member, "Array of %d 1-bit booleans does not match with %d available bits", flat_type->array.len, bits_available);
+			return false;
+		}
+		if (bits_available % flat_type->array.len != 0)
+		{
+			SEMA_ERROR(member, "Array length %d must divide evenly into %d available bits", flat_type->array.len, bits_available);
+			return false;
+		}
+	}
+
+	// NOTE: not really applicable to arraylike types, is it? Logic would get slightly more complex.
 	// Assigning more than needed is not allowed.
 	if (bitsize_type < bits_available)
 	{

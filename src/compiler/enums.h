@@ -1099,6 +1099,13 @@ typedef enum
 
 typedef enum
 {
+	DEMAND_READ  = 1 << 0,
+	DEMAND_WRITE = 1 << 1,
+	DEMAND_ADDR	 = 1 << 2,
+} ExprDemands;
+
+typedef enum
+{
 	EXPR_ACCESS_RESOLVED,
 	EXPR_ACCESS_UNRESOLVED,
 	EXPR_ADDR_CONVERSION,

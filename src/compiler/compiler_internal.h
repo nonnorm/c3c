@@ -1885,6 +1885,12 @@ struct SemaContext_
 	bool is_temp;
 	Decl *generic_infer;
 	Decl *generic_instance;
+	// Demands for ensuring correct expression type
+	struct
+	{
+		ExprDemands demands; // Q: should do anything to reduce size of this struct?
+		bool demands_set;
+	};
 };
 
 typedef enum
@@ -4783,4 +4789,20 @@ const char *os_type_to_string(OsType os);
 INLINE void expr_rewrite_const_string_from_scratch(Expr *expr_to_rewrite)
 {
 	expr_rewrite_const_string(expr_to_rewrite, scratch_buffer_copy(), scratch_buffer.len);
+}
+
+// Q: Where in the file should this go?
+INLINE ExprDemands sema_get_demands(SemaContext* ctx) {
+	ASSERT(ctx->demands_set);
+	ctx->demands_set = false;
+	return ctx->demands;
+}
+
+INLINE void sema_set_demands(SemaContext* ctx, ExprDemands demands) {
+	ctx->demands_set = true;
+	ctx->demands = demands;
+}
+
+INLINE void sema_keep_demands(SemaContext* ctx) {
+	ctx->demands_set = true;
 }

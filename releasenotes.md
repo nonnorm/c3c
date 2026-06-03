@@ -6,6 +6,11 @@
 - Add `$$PROJECT_PATH`, accessible through `env::PROJECT_PATH`.
 - Deprecate `$field.get(a)` and `$field.set(a, b)`. Replaced by `a.$field` and `a.$field = b`.
 - Add `a.$eval($field)` as a variant of `a.$field`.
+- Add json pretty print.
+- `$$atomic_store` and `$$atomic_load` takes an alignment parameter.
+- `$vaarg[^1]` is supported. #3276
+- Improve error message when a keyword is used a block parameter. #3275
+- Correct tag method error messages from `tagof`/`has_tagof` to `get_tag` and `has_tag` 
 
 ### Stdlib changes
 - Add math::TAU / math::TWO_PI
@@ -18,7 +23,8 @@
 - `ini::parse` and related takes an `error_line` argument to identify the line with error.
 - JSON marshaling will return INVALID_NUMBER when encountering a inf or NaN for a float.
 - JSON decoding will reject `1.` literals.
-
+- `spawn` now allows binding I/O and using different settings per pipe.
+ 
 ### Fixes
 - `@volatile_store` on arrays were sometimes incorrectly lowered.
 - NPOT vectors as associated variables were incorrectly lowered on load. #3228
@@ -66,7 +72,38 @@
 - Using a faultdef hidden behind `@if` would cause a crash.
 - Taking the type of a macro method would cause a crash.
 - Cap array size to avoid overflow when making multidimensional arrays that are too large.
-
+- DynamicArenaAllocator would incorrectly handle some reuse cases.
+- `__atomic_compare_exchange` had an incorrect implementation.
+- `channel::create_unbuffered` would not correctly zero out memory, potentially yielding unpredictable result.
+- `lock_timeout` on Posix would sleep the entire sleep before retrying, and it would fail if it managed to sleep.
+- `stack_size` setting for threads was ignored on Posix.
+- Setting thread priority on Win32 was off by one.
+- Non-power-of-two-sized member of @bigendian bitstruct backed by char array wasn't working #3283.
+- Binary bitwise operations were not considered simple.
+- `$expand` was incorrectly made generic in generic modules. #3274
+- Mangle lambdas in macros without `@` to ensure they work correctly on elf #3217.
+- `DString.replace("", "X");` would crash.
+- `DString.read_from_stream` would not return the correct length when `available` was not supported by the stream.
+- `@str_camelcase` would yield same result as `@str_pascalcase`. #3287
+- `conv::utf8to32` would not zero terminate in when the zero would be at the end of the buffer.
+- `char16_to_utf8_unsafe` would not load low byte unaligned when required.
+- Not all invalid UTF8 was detected.
+- UTF16 length detection was incorrect for utf16 with surrogate pairs.
+- Initializing a variable which has the type of an optional struct using a const value would fail codegen. #3288
+- Parsing a malformed hex float would not correctly get reported.
+- Parsing an integer with trailing space would incorrectly be reported as an error.
+- `String.escape` used the incorrect default for stripping quotes.
+- mem::equals would not correctly compare slices of with element size > 1.
+- `AsciiCharset.contains` incorrectly handled char > 127.
+- Reuse of recently freed DynamicArenaAllocator allocations failed.
+- Crash in codegen in some cases when RHS of a `&&` or `||` was unreachable at lowering.
+- Visibility modifiers were incorrectly allowed on enum/constdef members.
+- Datetime format could not handle negative offsets with non-zero minutes.
+- NormalDist.random could occasionally return inf.
+- Url parser would fail on `foo@bar.com`.
+- Url parser would drop the port on `http://[::1]:8080`.
+- Ipv6 classification - is_link_local etc, was incorrect.
+ 
 ## 0.8.0 Change list
 
 ### Changes / improvements
